@@ -14,6 +14,14 @@ const KNOWLEDGE_BASE = `
 
 const GIGACHAT_AUTH_KEY = process.env.GIGACHAT_AUTH_KEY; 
 
+// Список моделей для перебора. Начинаем с самых доступных.
+const MODELS_TO_TRY = [
+    "GigaChat-2", 
+    "GigaChat-2-Max", 
+    "GigaChat-3-Ultra", 
+    "GigaChat"
+];
+
 async function getGigaChatToken() {
     try {
         const response = await axios.post('https://ngw.devices.sberbank.ru:9443/api/v2/oauth', 
@@ -43,27 +51,46 @@ app.get('/api/chat', async (req, res) => {
         return res.json({ reply: "Ошибка авторизации (проверьте ключ GigaChat)." });
     }
 
-    try {
-        // ИСПРАВЛЕНО: Используем новейшую модель GigaChat-3-Ultra
-        const response = await axios.post('https://api.giga.chat/v1/chat/completions', {
-            model: "GigaChat-3-Ultra", 
-            messages: [
-                { role: "system", content: KNOWLEDGE_BASE },
-                { role: "user", content: userMessage }
-            ],
-            temperature: 0.5,
-            max_tokens: 300
-        }, {
-            headers: { 
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': 'application/json'
+    let lastError = null;
+
+    // Пробуем модели по очереди
+    for (const modelName of MODELS_TO_TRY) {
+        try {
+            const response = await axios.post('https://api.giga.chat/v1/chat/completions', {
+                model: modelName,
+                messages: [
+                    { role: "system", content: KNOWLEDGE_BASE },
+                    { role: "user", content: userMessage }
+                ],
+                temperature: 0.5,
+                max_tokens: 300
+            }, {
+                headers: { 
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            // Если запрос успешен, возвращаем ответ и выходим из цикла
+            return res.json({ reply: response.data.choices[0].message.content });
+
+        } catch (error) {
+            lastError = error;
+            // Если ошибка 404 (модель не найдена), пробуем следующую
+            if (error.response && error.response.status === 404) {
+                console.log(`Модель ${modelName} не найдена, пробуем следующую...`);
+                continue; 
+            } else {
+                // При других ошибках (например, 401) прекращаем перебор
+                console.error(`Ошибка при запросе к модели ${modelName}:`, error.response ? JSON.stringify(error.response.data) : error.message);
+                break;
             }
-        });
-        res.json({ reply: response.data.choices[0].message.content });
-    } catch (error) {
-        console.error("Ошибка ИИ:", error.response ? JSON.stringify(error.response.data) : error.message);
-        res.json({ reply: "ИИ временно недоступен. Проверьте логи на Netrun." });
+        }
     }
+
+    // Если все модели перебраны и ни одна не сработала
+    console.error("Все модели вернули ошибку. Последняя ошибка:", lastError.response ? JSON.stringify(lastError.response.data) : lastError.message);
+    res.json({ reply: "ИИ временно недоступен. Все доступные модели вернули ошибку." });
 });
 
 const PORT = process.env.PORT || 3000;
