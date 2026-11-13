@@ -45,8 +45,9 @@ app.get('/api/chat', async (req, res) => {
     }
 
     try {
-        const response = await axios.post('https://api.giga.chat/v1/chat/completions', {
-            // ИСПРАВЛЕНО: Изменено на GigaChat-2
+        // ИСПРАВЛЕНО: Официальный эндпоинт Сбера
+        const response = await axios.post('https://gigachat.devices.sberbank.ru/api/v1/chat/completions', {
+            // Пробуем GigaChat-2. Если не сработает, замените на "GigaChat"
             model: "GigaChat-2", 
             messages: [
                 { role: "system", content: KNOWLEDGE_BASE },
