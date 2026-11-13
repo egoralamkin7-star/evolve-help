@@ -46,7 +46,8 @@ app.get('/api/chat', async (req, res) => {
 
     try {
         const response = await axios.post('https://api.giga.chat/v1/chat/completions', {
-            model: "GigaChat",
+            // ИСПРАВЛЕНО: Изменено на GigaChat-2
+            model: "GigaChat-2", 
             messages: [
                 { role: "system", content: KNOWLEDGE_BASE },
                 { role: "user", content: userMessage }
