@@ -14,13 +14,13 @@ const KNOWLEDGE_BASE = `
 
 const GIGACHAT_AUTH_KEY = process.env.GIGACHAT_AUTH_KEY; 
 
-// Список комбинаций "модель + версия API" для перебора
-const ATTEMPTS = [
-    { model: "GigaChat-3-Ultra", endpoint: "v1" },
-    { model: "GigaChat-3-Ultra", endpoint: "v2" },
-    { model: "GigaChat-2-Max", endpoint: "v1" },
-    { model: "GigaChat-2-Pro", endpoint: "v1" },
-    { model: "GigaChat-2", endpoint: "v1" }
+// Список моделей для перебора (в порядке приоритета)
+const MODELS_TO_TRY = [
+    "GigaChat-2", 
+    "GigaChat-3-Ultra", 
+    "GigaChat-2-Max", 
+    "GigaChat-2-Pro",
+    "GigaChat"
 ];
 
 async function getGigaChatToken() {
@@ -52,58 +52,44 @@ app.get('/api/chat', async (req, res) => {
         return res.json({ reply: "Ошибка авторизации. Проверьте ключ GigaChat в настройках Netrun." });
     }
 
-    // Перебираем все комбинации
-    for (const attempt of ATTEMPTS) {
-        const url = `https://api.giga.chat/${attempt.endpoint}/chat/completions`;
-        
+    // Перебираем модели по очереди
+    for (const modelName of MODELS_TO_TRY) {
         try {
-            const payload = {
-                model: attempt.model,
+            const response = await axios.post('https://api.giga.chat/v1/chat/completions', {
+                model: modelName,
                 messages: [
                     { role: "system", content: KNOWLEDGE_BASE },
                     { role: "user", content: userMessage }
                 ],
                 temperature: 0.5,
                 max_tokens: 300
-            };
-
-            // Для v2 API формат сообщений может отличаться (массив объектов с text)
-            if (attempt.endpoint === "v2") {
-                payload.messages = [
-                    { role: "system", content: [{ text: KNOWLEDGE_BASE }] },
-                    { role: "user", content: [{ text: userMessage }] }
-                ];
-            }
-
-            const response = await axios.post(url, payload, {
+            }, {
                 headers: { 
                     'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
+                    'Content-Type': 'application/json'
                 }
             });
             
-            // Если дошли сюда — комбинация сработала!
-            console.log(`✅ Успех: модель "${attempt.model}" через API "${attempt.endpoint}"`);
+            // Если дошли сюда - модель сработала! Отправляем ответ в игру.
+            console.log(`✅ Успешный ответ от модели: ${modelName}`);
             return res.json({ reply: response.data.choices[0].message.content });
 
         } catch (error) {
-            // Если ошибка 404 — пробуем следующую комбинацию
+            // Если ошибка 404 (модель не найдена) - просто идем к следующей в списке
             if (error.response && error.response.status === 404) {
-                console.log(`❌ Не найдено: модель "${attempt.model}" через API "${attempt.endpoint}"`);
+                console.log(`❌ Модель ${modelName} не найдена на аккаунте, пробуем следующую...`);
                 continue; 
             } else {
-                // При других ошибках (например, 401) — останавливаемся и логируем
-                console.error(`Критическая ошибка для "${attempt.model}" (${attempt.endpoint}):`, 
-                    error.response ? JSON.stringify(error.response.data) : error.message);
-                return res.json({ reply: "Ошибка на стороне ИИ. Проверьте логи Netrun." });
+                // Если ошибка другая (например, кончились токены) - выводим в лог и останавливаемся
+                console.error(`Критическая ошибка с моделью ${modelName}:`, error.response ? JSON.stringify(error.response.data) : error.message);
+                return res.json({ reply: "Ошибка на стороне ИИ. Проверьте баланс токенов или логи." });
             }
         }
     }
 
-    // Если все комбинации перебраны, и ни одна не сработала
-    console.error("Все комбинации моделей и API вернули 404.");
-    res.json({ reply: "ИИ временно недоступен. Ни одна модель не подошла." });
+    // Если перебрали все модели и ни одна не подошла
+    console.error("Все доступные модели вернули 404. Возможно, у ключа нет доступа к чат-моделям.");
+    res.json({ reply: "ИИ временно недоступен (ни одна модель не подошла)." });
 });
 
 const PORT = process.env.PORT || 3000;
