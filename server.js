@@ -44,9 +44,9 @@ app.get('/api/chat', async (req, res) => {
     }
 
     try {
-        // ИСПРАВЛЕНО: Используем официальный адрес API и модель GigaChat-2
+        // Используем точное имя модели из документации: GigaChat (Lite)
         const response = await axios.post('https://api.giga.chat/v1/chat/completions', {
-            model: "GigaChat-2", 
+            model: "GigaChat", 
             messages: [
                 { role: "system", content: KNOWLEDGE_BASE },
                 { role: "user", content: userMessage }
@@ -61,7 +61,6 @@ app.get('/api/chat', async (req, res) => {
         });
         res.json({ reply: response.data.choices[0].message.content });
     } catch (error) {
-        // Выводим в логи подробную ошибку от GigaChat для диагностики
         console.error("Ошибка ИИ:", error.response ? JSON.stringify(error.response.data) : error.message);
         res.json({ reply: "ИИ временно недоступен. Проверьте логи на Netrun." });
     }
