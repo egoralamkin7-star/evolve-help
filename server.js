@@ -14,6 +14,15 @@ const KNOWLEDGE_BASE = `
 
 const GIGACHAT_AUTH_KEY = process.env.GIGACHAT_AUTH_KEY; 
 
+// Список комбинаций "модель + версия API" для перебора
+const ATTEMPTS = [
+    { model: "GigaChat-3-Ultra", endpoint: "v1" },
+    { model: "GigaChat-3-Ultra", endpoint: "v2" },
+    { model: "GigaChat-2-Max", endpoint: "v1" },
+    { model: "GigaChat-2-Pro", endpoint: "v1" },
+    { model: "GigaChat-2", endpoint: "v1" }
+];
+
 async function getGigaChatToken() {
     try {
         const response = await axios.post('https://ngw.devices.sberbank.ru:9443/api/v2/oauth', 
@@ -43,29 +52,58 @@ app.get('/api/chat', async (req, res) => {
         return res.json({ reply: "Ошибка авторизации. Проверьте ключ GigaChat в настройках Netrun." });
     }
 
-    try {
-        // Используем актуальную модель и правильный endpoint
-        const response = await axios.post('https://api.giga.chat/v1/chat/completions', {
-            model: "GigaChat-3-Ultra", 
-            messages: [
-                { role: "system", content: KNOWLEDGE_BASE },
-                { role: "user", content: userMessage }
-            ],
-            temperature: 0.5,
-            max_tokens: 300
-        }, {
-            headers: { 
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': 'application/json'
+    // Перебираем все комбинации
+    for (const attempt of ATTEMPTS) {
+        const url = `https://api.giga.chat/${attempt.endpoint}/chat/completions`;
+        
+        try {
+            const payload = {
+                model: attempt.model,
+                messages: [
+                    { role: "system", content: KNOWLEDGE_BASE },
+                    { role: "user", content: userMessage }
+                ],
+                temperature: 0.5,
+                max_tokens: 300
+            };
+
+            // Для v2 API формат сообщений может отличаться (массив объектов с text)
+            if (attempt.endpoint === "v2") {
+                payload.messages = [
+                    { role: "system", content: [{ text: KNOWLEDGE_BASE }] },
+                    { role: "user", content: [{ text: userMessage }] }
+                ];
             }
-        });
-        res.json({ reply: response.data.choices[0].message.content });
-    } catch (error) {
-        // Выводим в логи подробную информацию об ошибке для диагностики
-        const errorInfo = error.response ? JSON.stringify(error.response.data) : error.message;
-        console.error("Ошибка ИИ:", errorInfo);
-        res.json({ reply: "ИИ временно недоступен. Проверьте логи на Netrun." });
+
+            const response = await axios.post(url, payload, {
+                headers: { 
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
+            });
+            
+            // Если дошли сюда — комбинация сработала!
+            console.log(`✅ Успех: модель "${attempt.model}" через API "${attempt.endpoint}"`);
+            return res.json({ reply: response.data.choices[0].message.content });
+
+        } catch (error) {
+            // Если ошибка 404 — пробуем следующую комбинацию
+            if (error.response && error.response.status === 404) {
+                console.log(`❌ Не найдено: модель "${attempt.model}" через API "${attempt.endpoint}"`);
+                continue; 
+            } else {
+                // При других ошибках (например, 401) — останавливаемся и логируем
+                console.error(`Критическая ошибка для "${attempt.model}" (${attempt.endpoint}):`, 
+                    error.response ? JSON.stringify(error.response.data) : error.message);
+                return res.json({ reply: "Ошибка на стороне ИИ. Проверьте логи Netrun." });
+            }
+        }
     }
+
+    // Если все комбинации перебраны, и ни одна не сработала
+    console.error("Все комбинации моделей и API вернули 404.");
+    res.json({ reply: "ИИ временно недоступен. Ни одна модель не подошла." });
 });
 
 const PORT = process.env.PORT || 3000;
