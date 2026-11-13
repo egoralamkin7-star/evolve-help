@@ -1,11 +1,9 @@
-// server.js
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'; // Обход SSL для работы GigaChat на хостинге
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'; 
 const express = require('express');
 const axios = require('axios');
 const { randomUUID } = require('crypto');
 const app = express();
 
-// ⚠️ ВАША БАЗА ЗНАНИЙ (пока тестовая, потом замените на свою)
 const KNOWLEDGE_BASE = `
 Вы - умный помощник на сервере GTA SA:MP Evolve RP. 
 Отвечайте кратко, дружелюбно и по делу. 
@@ -14,7 +12,8 @@ const KNOWLEDGE_BASE = `
 - Где купить машину: Автосалоны отмечены на карте (GPS).
 `;
 
-const GIGACHAT_AUTH_KEY = "MDFhMWQzOGQtOGU4OC03NjE4LTk4YTQtZjBhNWViZTUwM2Q5OjlkY2RmMmQwLTA0YWYtNGRmNC1iNTVhLTk3MTA4YTkxNzAxYQ=="; 
+// Берем ключ из настроек хостинга Netrun (переменная окружения)
+const GIGACHAT_AUTH_KEY = process.env.GIGACHAT_AUTH_KEY; 
 
 async function getGigaChatToken() {
     try {
@@ -42,7 +41,7 @@ app.get('/api/chat', async (req, res) => {
 
     const accessToken = await getGigaChatToken();
     if (!accessToken) {
-        return res.json({ reply: "Ошибка авторизации (проверьте ключ или срок его действия)." });
+        return res.json({ reply: "Ошибка авторизации (проверьте ключ GigaChat)." });
     }
 
     try {
@@ -67,5 +66,6 @@ app.get('/api/chat', async (req, res) => {
     }
 });
 
+// ВАЖНО: Слушаем порт, который выдает хостинг, и адрес 0.0.0.0
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Сервер работает!`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Сервер работает на порту ${PORT}!`));
