@@ -14,14 +14,6 @@ const KNOWLEDGE_BASE = `
 
 const GIGACHAT_AUTH_KEY = process.env.GIGACHAT_AUTH_KEY; 
 
-// Список самых актуальных моделей для Freemium (физлица)
-const MODELS_TO_TRY = [
-    "GigaChat-3-Ultra", // Флагманская, доступна физлицам в Freemium
-    "GigaChat-2",        // Базовая (Lite)
-    "GigaChat-2-Max",
-    "GigaChat-2-Pro"
-];
-
 async function getGigaChatToken() {
     try {
         const response = await axios.post('https://ngw.devices.sberbank.ru:9443/api/v2/oauth', 
@@ -42,6 +34,23 @@ async function getGigaChatToken() {
     }
 }
 
+// Новая функция: получаем список доступных моделей
+async function getAvailableModels(accessToken) {
+    try {
+        const response = await axios.get('https://api.giga.chat/v1/models', {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Accept': 'application/json'
+            }
+        });
+        // Возвращаем массив ID моделей
+        return response.data.data.map(m => m.id);
+    } catch (error) {
+        console.error("Ошибка получения списка моделей:", error.response ? JSON.stringify(error.response.data) : error.message);
+        return null;
+    }
+}
+
 app.get('/api/chat', async (req, res) => {
     const userMessage = req.query.message;
     if (!userMessage) return res.json({ reply: "Вы ничего не спросили." });
@@ -51,39 +60,41 @@ app.get('/api/chat', async (req, res) => {
         return res.json({ reply: "Ошибка авторизации. Проверьте ключ GigaChat в настройках Netrun." });
     }
 
-    for (const modelName of MODELS_TO_TRY) {
-        try {
-            const response = await axios.post('https://api.giga.chat/v1/chat/completions', {
-                model: modelName,
-                messages: [
-                    { role: "system", content: KNOWLEDGE_BASE },
-                    { role: "user", content: userMessage }
-                ],
-                temperature: 0.5,
-                max_tokens: 300
-            }, {
-                headers: { 
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-            
-            console.log(`✅ Успешный ответ от модели: ${modelName}`);
-            return res.json({ reply: response.data.choices[0].message.content });
-
-        } catch (error) {
-            if (error.response && error.response.status === 404) {
-                console.log(`❌ Модель ${modelName} не найдена, пробуем следующую...`);
-                continue; 
-            } else {
-                console.error(`Критическая ошибка с моделью ${modelName}:`, error.response ? JSON.stringify(error.response.data) : error.message);
-                return res.json({ reply: "Ошибка на стороне ИИ. Проверьте логи Netrun." });
-            }
-        }
+    // Получаем список моделей, доступных для этого ключа
+    const availableModels = await getAvailableModels(accessToken);
+    if (!availableModels || availableModels.length === 0) {
+        return res.json({ reply: "Не удалось получить список доступных моделей." });
     }
 
-    console.error("Все модели вернули 404. Возможно, у ключа нет доступа к чат-моделям.");
-    res.json({ reply: "ИИ временно недоступен (ни одна модель не подошла)." });
+    console.log(`Доступные модели для вашего ключа: ${availableModels.join(', ')}`);
+
+    // Берем первую доступную модель
+    const modelToUse = availableModels[0]; 
+
+    try {
+        const response = await axios.post('https://api.giga.chat/v1/chat/completions', {
+            model: modelToUse,
+            messages: [
+                { role: "system", content: KNOWLEDGE_BASE },
+                { role: "user", content: userMessage }
+            ],
+            temperature: 0.5,
+            max_tokens: 300
+        }, {
+            headers: { 
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        console.log(`✅ Успешный ответ от модели: ${modelToUse}`);
+        res.json({ reply: response.data.choices[0].message.content });
+
+    } catch (error) {
+        const errorInfo = error.response ? JSON.stringify(error.response.data) : error.message;
+        console.error(`Критическая ошибка с моделью ${modelToUse}:`, errorInfo);
+        res.json({ reply: "ИИ временно недоступен. Проверьте логи Netrun." });
+    }
 });
 
 const PORT = process.env.PORT || 3000;
