@@ -12,7 +12,6 @@ const KNOWLEDGE_BASE = `
 - Где купить машину: Автосалоны отмечены на карте (GPS).
 `;
 
-// Берем ключ из настроек хостинга Netrun (переменная окружения)
 const GIGACHAT_AUTH_KEY = process.env.GIGACHAT_AUTH_KEY; 
 
 async function getGigaChatToken() {
@@ -45,9 +44,9 @@ app.get('/api/chat', async (req, res) => {
     }
 
     try {
-        // ИСПРАВЛЕНО: Официальный эндпоинт и модель GigaChat-2
+        // ИСПРАВЛЕНО: Используем новейшую модель GigaChat-3-Ultra
         const response = await axios.post('https://api.giga.chat/v1/chat/completions', {
-            model: "GigaChat-2", 
+            model: "GigaChat-3-Ultra", 
             messages: [
                 { role: "system", content: KNOWLEDGE_BASE },
                 { role: "user", content: userMessage }
@@ -62,11 +61,10 @@ app.get('/api/chat', async (req, res) => {
         });
         res.json({ reply: response.data.choices[0].message.content });
     } catch (error) {
-        console.error("Ошибка ИИ:", error.response ? error.response.data : error.message);
-        res.json({ reply: "ИИ временно недоступен." });
+        console.error("Ошибка ИИ:", error.response ? JSON.stringify(error.response.data) : error.message);
+        res.json({ reply: "ИИ временно недоступен. Проверьте логи на Netrun." });
     }
 });
 
-// ВАЖНО: Слушаем порт, который выдает хостинг, и адрес 0.0.0.0
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => console.log(`Сервер работает на порту ${PORT}!`));
